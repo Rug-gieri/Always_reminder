@@ -13,6 +13,7 @@ class PersistentNotepad:
         # Configurações
         self.current_file = None
         self.settings_file = "notepad_settings.json"
+        self.content_file = "notepad_content.txt"
         self.auto_save = True
         
         # Modo escuro/claro
@@ -34,7 +35,7 @@ class PersistentNotepad:
         # Bind para salvar automático
         self.text.bind("<KeyRelease>", self.auto_save_content)
         
-        # Carregar conteúdo salvo
+        # Carregar conteúdo salvo (arquivo separado)
         self.load_content()
         
         # Bind para fechamento da janela
@@ -84,6 +85,8 @@ class PersistentNotepad:
         file_menu.add_separator()
         file_menu.add_command(label="Sempre no Topo", command=self.toggle_always_on_top)
         file_menu.add_separator()
+        file_menu.add_command(label="Limpar Conteúdo Salvo", command=self.clear_saved_content)
+        file_menu.add_separator()
         file_menu.add_command(label="Sair", command=self.on_closing, accelerator="Ctrl+Q")
         
         # Menu Editar
@@ -117,6 +120,15 @@ class PersistentNotepad:
         view_menu.add_command(label="Zoom -", command=self.zoom_out, accelerator="Ctrl+-")
         view_menu.add_command(label="Zoom Padrão", command=self.zoom_reset, accelerator="Ctrl+0")
         
+        # Menu Configurações
+        config_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Configurações", menu=config_menu)
+        config_menu.add_command(label="Backup Configurações", command=self.backup_settings)
+        config_menu.add_command(label="Restaurar Configurações", command=self.restore_settings)
+        config_menu.add_command(label="Redefinir para Padrão", command=self.reset_settings)
+        config_menu.add_separator()
+        config_menu.add_command(label="Exibir Caminhos dos Arquivos", command=self.show_file_paths)
+        
         # Menu Ajuda
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Ajuda", menu=help_menu)
@@ -144,7 +156,7 @@ class PersistentNotepad:
         self.root.bind('<Control-d>', lambda e: self.toggle_dark_mode())
         
     def load_settings(self):
-        """Carrega configurações salvas"""
+        """Carrega configurações do arquivo JSON"""
         default_font = ("Arial", 10)
         default_settings = {
             "font": default_font,
@@ -152,19 +164,18 @@ class PersistentNotepad:
             "bg_color": "#FFFFFF",
             "wrap": True,
             "font_size": 10,
-            "content": "",
             "window_geometry": "300x300",
             "always_on_top": False,
-            "dark_mode": False,  # Nova configuração: modo escuro
-            "saved_light_bg": "#FFFFFF",  # Salvar cor de fundo claro personalizada
-            "saved_light_fg": "#000000",  # Salvar cor de texto claro personalizada
-            "saved_dark_bg": "#2b2b2b",   # Salvar cor de fundo escuro personalizada
-            "saved_dark_fg": "#ffffff"    # Salvar cor de texto escuro personalizada
+            "dark_mode": False,
+            "saved_light_bg": "#FFFFFF",
+            "saved_light_fg": "#000000",
+            "saved_dark_bg": "#2b2b2b",
+            "saved_dark_fg": "#ffffff"
         }
         
         try:
             if os.path.exists(self.settings_file):
-                with open(self.settings_file, 'r') as f:
+                with open(self.settings_file, 'r', encoding='utf-8') as f:
                     settings = json.load(f)
                     # Mesclar com padrões para garantir todas as chaves existem
                     for key in default_settings:
@@ -181,7 +192,6 @@ class PersistentNotepad:
         self.bg_color = settings["bg_color"]
         self.wrap_text = settings["wrap"]
         self.font_size = settings["font_size"]
-        self.saved_content = settings.get("content", "")
         self.root.geometry(settings.get("window_geometry", "300x300"))
         self.always_on_top = settings.get("always_on_top", False)
         self.dark_mode = settings.get("dark_mode", False)
@@ -205,7 +215,7 @@ class PersistentNotepad:
             self.root.attributes('-topmost', True)
         
     def save_settings(self):
-        """Salva configurações atuais"""
+        """Salva APENAS configurações no arquivo JSON (sem conteúdo)"""
         # Atualizar cores salvas baseadas no tema atual
         if self.dark_mode:
             self.saved_dark_bg = self.bg_color
@@ -220,7 +230,6 @@ class PersistentNotepad:
             "bg_color": self.bg_color,
             "wrap": self.wrap_text,
             "font_size": self.font_size,
-            "content": self.text.get("1.0", tk.END),
             "window_geometry": self.root.geometry(),
             "always_on_top": self.always_on_top,
             "dark_mode": self.dark_mode,
@@ -231,20 +240,43 @@ class PersistentNotepad:
         }
         
         try:
-            with open(self.settings_file, 'w') as f:
-                json.dump(settings, f)
+            with open(self.settings_file, 'w', encoding='utf-8') as f:
+                json.dump(settings, f, indent=4)
+            print(f"Configurações salvas em: {os.path.abspath(self.settings_file)}")
         except Exception as e:
             print(f"Erro ao salvar configurações: {e}")
     
+    def save_content(self):
+        """Salva APENAS o conteúdo no arquivo TXT separado"""
+        try:
+            content = self.text.get("1.0", tk.END)
+            # Remover o último caractere (que é uma nova linha extra do widget Text)
+            if content.endswith('\n'):
+                content = content[:-1]
+            
+            with open(self.content_file, 'w', encoding='utf-8') as f:
+                f.write(content)
+            print(f"Conteúdo salvo em: {os.path.abspath(self.content_file)}")
+        except Exception as e:
+            print(f"Erro ao salvar conteúdo: {e}")
+    
     def load_content(self):
-        """Carrega conteúdo salvo"""
-        if self.saved_content:
-            self.text.insert("1.0", self.saved_content)
+        """Carrega conteúdo do arquivo TXT separado"""
+        try:
+            if os.path.exists(self.content_file):
+                with open(self.content_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                self.text.insert("1.0", content)
+                print(f"Conteúdo carregado de: {os.path.abspath(self.content_file)}")
+            else:
+                print("Arquivo de conteúdo não encontrado, iniciando com texto vazio")
+        except Exception as e:
+            print(f"Erro ao carregar conteúdo: {e}")
     
     def auto_save_content(self, event=None):
-        """Salva automaticamente o conteúdo"""
+        """Salva automaticamente o conteúdo (mas não as configurações a cada tecla)"""
         if self.auto_save:
-            self.save_settings()
+            self.save_content()
     
     def toggle_always_on_top(self):
         """Alterna entre manter a janela sempre visível ou não"""
@@ -285,7 +317,7 @@ class PersistentNotepad:
         self.text.config(
             fg=self.text_color,
             bg=self.bg_color,
-            insertbackground=self.text_color  # Cor do cursor
+            insertbackground=self.text_color
         )
         
         # Atualizar cor de fundo da janela principal
@@ -299,7 +331,6 @@ class PersistentNotepad:
         try:
             # Para widgets que suportam bg/fg
             if hasattr(widget, 'config'):
-                # Atualizar background se não for um botão ou entrada
                 widget_type = str(widget.winfo_class())
                 if widget_type not in ['Button', 'Entry', 'Spinbox', 'Listbox']:
                     widget.config(bg=self.bg_color)
@@ -317,7 +348,6 @@ class PersistentNotepad:
     
     def show_status_message(self, message):
         """Mostra uma mensagem temporária na barra de status"""
-        # Criar uma barra de status temporária
         if hasattr(self, 'status_label'):
             self.status_label.destroy()
         
@@ -334,15 +364,109 @@ class PersistentNotepad:
         # Remover após 2 segundos
         self.root.after(2000, self.status_label.destroy)
     
+    # NOVAS FUNÇÕES PARA GERENCIAR ARQUIVOS SEPARADOS
+    def backup_settings(self):
+        """Cria um backup das configurações"""
+        import shutil
+        import datetime
+        
+        if os.path.exists(self.settings_file):
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_file = f"notepad_settings_backup_{timestamp}.json"
+            shutil.copy2(self.settings_file, backup_file)
+            messagebox.showinfo("Backup", f"Configurações salvas em:\n{backup_file}")
+        else:
+            messagebox.showwarning("Backup", "Arquivo de configurações não encontrado!")
+    
+    def restore_settings(self):
+        """Restaura configurações de um backup"""
+        file_path = filedialog.askopenfilename(
+            title="Selecionar backup de configurações",
+            filetypes=[("Arquivos JSON", "*.json"), ("Todos os arquivos", "*.*")]
+        )
+        
+        if file_path:
+            try:
+                # Fazer backup do arquivo atual
+                import shutil
+                if os.path.exists(self.settings_file):
+                    shutil.copy2(self.settings_file, f"{self.settings_file}.backup")
+                
+                # Copiar backup selecionado
+                shutil.copy2(file_path, self.settings_file)
+                
+                # Recarregar configurações
+                self.load_settings()
+                self.apply_theme()
+                
+                messagebox.showinfo("Sucesso", "Configurações restauradas! A aplicação será reiniciada.")
+                self.root.after(1000, self.restart_application)
+                
+            except Exception as e:
+                messagebox.showerror("Erro", f"Não foi possível restaurar:\n{str(e)}")
+    
+    def reset_settings(self):
+        """Redefine todas as configurações para os valores padrão"""
+        if messagebox.askyesno("Confirmar", "Tem certeza que deseja redefinir todas as configurações para os valores padrão?"):
+            # Remover arquivos de configuração
+            try:
+                if os.path.exists(self.settings_file):
+                    os.remove(self.settings_file)
+                if os.path.exists(self.content_file):
+                    os.remove(self.content_file)
+                
+                messagebox.showinfo("Sucesso", "Configurações redefinidas! A aplicação será reiniciada.")
+                self.root.after(1000, self.restart_application)
+            except Exception as e:
+                messagebox.showerror("Erro", f"Não foi possível redefinir:\n{str(e)}")
+    
+    def restart_application(self):
+        """Reinicia a aplicação"""
+        self.root.destroy()
+        # Relança a aplicação
+        import sys
+        os.execv(sys.executable, ['python'] + sys.argv)
+    
+    def clear_saved_content(self):
+        """Limpa o conteúdo salvo no arquivo TXT"""
+        if messagebox.askyesno("Confirmar", "Tem certeza que deseja limpar o conteúdo salvo automaticamente?\n\nIsso não afetará o arquivo atual se você tiver um aberto."):
+            try:
+                if os.path.exists(self.content_file):
+                    os.remove(self.content_file)
+                    self.show_status_message("Conteúdo salvo foi limpo")
+                else:
+                    self.show_status_message("Nenhum conteúdo salvo encontrado")
+            except Exception as e:
+                messagebox.showerror("Erro", f"Não foi possível limpar:\n{str(e)}")
+    
+    def show_file_paths(self):
+        """Mostra os caminhos dos arquivos de configuração e conteúdo"""
+        settings_path = os.path.abspath(self.settings_file)
+        content_path = os.path.abspath(self.content_file)
+        
+        message = (
+            f"📁 Arquivo de CONFIGURAÇÕES:\n{settings_path}\n\n"
+            f"📄 Arquivo de CONTEÚDO:\n{content_path}\n\n"
+            f"📊 Tamanho das configurações: {os.path.getsize(self.settings_file) if os.path.exists(self.settings_file) else 0} bytes\n"
+            f"📊 Tamanho do conteúdo: {os.path.getsize(self.content_file) if os.path.exists(self.content_file) else 0} bytes"
+        )
+        
+        messagebox.showinfo("Caminhos dos Arquivos", message)
+    
     # Funcionalidades do Menu Arquivo
     def new_file(self):
         if self.text.get("1.0", "end-1c"):
-            if messagebox.askyesno("Novo Arquivo", "Deseja salvar as alterações?"):
+            if messagebox.askyesno("Novo Arquivo", "Deseja salvar as alterações no arquivo atual?"):
                 self.save_file()
+        
+        # Perguntar se quer limpar o arquivo de conteúdo automático também
+        if messagebox.askyesno("Novo Arquivo", "Deseja também limpar o conteúdo salvo automaticamente?"):
+            self.clear_saved_content()
+        
         self.text.delete("1.0", tk.END)
         self.current_file = None
-        self.root.title("Bloco de Notas - Sem título")
-        
+        self.root.title("Reminder")
+    
     def open_file(self):
         file_path = filedialog.askopenfilename(
             defaultextension=".txt",
@@ -356,7 +480,7 @@ class PersistentNotepad:
                 self.text.delete("1.0", tk.END)
                 self.text.insert("1.0", content)
                 self.current_file = file_path
-                self.root.title(f"Bloco de Notas - {os.path.basename(file_path)}")
+                self.root.title(f"Reminder - {os.path.basename(file_path)}")
             except Exception as e:
                 messagebox.showerror("Erro", f"Não foi possível abrir o arquivo:\n{str(e)}")
     
@@ -365,7 +489,6 @@ class PersistentNotepad:
             try:
                 with open(self.current_file, 'w', encoding='utf-8') as file:
                     file.write(self.text.get("1.0", tk.END))
-                self.save_settings()
                 messagebox.showinfo("Salvo", "Arquivo salvo com sucesso!")
             except Exception as e:
                 messagebox.showerror("Erro", f"Não foi possível salvar o arquivo:\n{str(e)}")
@@ -381,7 +504,7 @@ class PersistentNotepad:
         if file_path:
             self.current_file = file_path
             self.save_file()
-            self.root.title(f"Bloco de Notas - {os.path.basename(file_path)}")
+            self.root.title(f"Reminder - {os.path.basename(file_path)}")
     
     # Funcionalidades do Menu Editar
     def undo(self):
@@ -457,11 +580,10 @@ class PersistentNotepad:
         font_families = list(font.families())
         font_families.sort()
         
-        font_var = tk.StringVar(value=self.current_font[0])
         font_listbox = tk.Listbox(font_window, height=5, bg=self.bg_color, fg=self.text_color)
         scrollbar = tk.Scrollbar(font_window, orient=tk.VERTICAL)
         
-        for family in font_families[:50]:  # Mostra as primeiras 50
+        for family in font_families[:50]:
             font_listbox.insert(tk.END, family)
         
         font_listbox.config(yscrollcommand=scrollbar.set)
@@ -494,7 +616,6 @@ class PersistentNotepad:
         if color[1]:
             self.text_color = color[1]
             self.text.config(fg=self.text_color, insertbackground=self.text_color)
-            # Atualizar cores salvas baseadas no tema
             if self.dark_mode:
                 self.saved_dark_fg = self.text_color
             else:
@@ -507,7 +628,6 @@ class PersistentNotepad:
             self.bg_color = color[1]
             self.text.config(bg=self.bg_color)
             self.root.config(bg=self.bg_color)
-            # Atualizar cores salvas baseadas no tema
             if self.dark_mode:
                 self.saved_dark_bg = self.bg_color
             else:
@@ -544,22 +664,41 @@ class PersistentNotepad:
     
     # Ajuda
     def show_about(self):
-        about_text = """Bloco de Notas Persistente
+        about_text = """Reminder - Bloco de Notas Persistente
 
-Versão 2.0
+Versão 3.0
 
-• Mantém conteúdo entre sessões
+• Configurações e conteúdo em arquivos separados
 • Modo Escuro/Claro (Ctrl+D)
 • Opção 'Sempre no Topo' (Alt+T)
+• Backup e restauração de configurações
 • Todas as funcionalidades básicas de um bloco de notas
 • Configurações totalmente persistentes
-• Desenvolvido by Rug"""
+
+📁 Arquivos criados:
+• notepad_settings.json (configurações)
+• notepad_content.txt (conteúdo automático)
+
+Desenvolvido by Rug"""
         
         messagebox.showinfo("Sobre", about_text)
     
     def on_closing(self):
         """Salva tudo ao fechar"""
+        # Salvar configurações
         self.save_settings()
+        
+        # Salvar conteúdo apenas se não houver arquivo aberto
+        if self.current_file is None:
+            self.save_content()
+        else:
+            # Se há arquivo aberto, salvar nele
+            try:
+                with open(self.current_file, 'w', encoding='utf-8') as file:
+                    file.write(self.text.get("1.0", tk.END))
+            except:
+                pass
+        
         self.root.destroy()
     
     def run(self):
